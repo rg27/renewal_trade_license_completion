@@ -5,7 +5,11 @@
 const LOAD_FUNCTION   = "renewal_tl_completion_data";                    // returns the existing license data
 const UPDATE_FUNCTION = "renewal_license_completion_update_trade_license"; // saves the renewal
 
+// Multi-Year Continuation? is only shown for this jurisdiction
+const CONTINUATION_JURISDICTION = "International Free Zone Authority";
+
 let currentRecordId, currentLfId, currentAccountId, triggeredByUser = null;
+let currentJurisdiction = null;
 
 /* ---------------------------------------------------------------
    Dropdown options
@@ -237,6 +241,18 @@ function maxExpiryDate(startStr, years) {
 /* YYYY-MM-DD -> DD/MM/YYYY for messages */
 const formatDisplayDate = (s) => s.split("-").reverse().join("/");
 
+/* Allowed window for Issuance and Start dates:
+   first day of last month through last day of this month */
+function allowedMonthWindow() {
+    const now = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    const fmt = (d) => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    return {
+        min: fmt(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+        max: fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+    };
+}
+
 function validateForm() {
     let firstInvalid = null;
 
@@ -253,10 +269,20 @@ function validateForm() {
         }
     });
 
+    // Issuance Date and Start Date: this month or last month only
+    const { min: minAllowed, max: maxAllowed } = allowedMonthWindow();
+    ["license_issuance_date", "license_start_date"].forEach(key => {
+        const f = fieldByKey(key);
+        const val = getValue(f);
+        if (val && (val < minAllowed || val > maxAllowed)) {
+            setError(f, `Please ensure the ${f.label} is recent and valid.`);
+            if (!firstInvalid) firstInvalid = f;
+        }
+    });
+
     const start      = getValue(fieldByKey("license_start_date"));
     const expiry     = getValue(fieldByKey("license_expiry_date"));
     const duration   = getValue(fieldByKey("license_duration"));
-    const isMultiYearContinuation = getValue(fieldByKey("multi_year_continuation"));
     const expiryField = fieldByKey("license_expiry_date");
 
     if (expiry) {   // empty case is already handled by the required check
@@ -267,7 +293,8 @@ function validateForm() {
             message = "Expiry date must be a future date.";
         } else if (start && expiry <= start) {
             message = "Expiry date must be after the start date.";
-        } else if (start && duration && !isMultiYearContinuation) {
+        } else if (start && duration) {
+            // Runs whether or not Multi-Year Continuation is ticked
             const years = parseInt(duration, 10);   // "3 Years" -> 3
             if (years) {
                 // The expiry must be exactly start + duration - 1 day
@@ -289,6 +316,41 @@ function validateForm() {
         return false;
     }
     return true;
+}
+
+/* IFZA + Multi-Year Continuation ticked:
+   - MY - License Duration must be 1 Year
+   - License Expiry Date must be exactly Start Date + 1 year - 1 day
+   Errors are shown inline only (no toast). */
+function validateIfzaContinuation() {
+    const continuation = getValue(fieldByKey("multi_year_continuation"));
+    if (!continuation || !isContinuationJurisdiction(currentJurisdiction)) return true;
+
+    const durationField = fieldByKey("license_duration");
+    const expiryField   = fieldByKey("license_expiry_date");
+    const duration = getValue(durationField);
+    const start    = getValue(fieldByKey("license_start_date"));
+    const expiry   = getValue(expiryField);
+
+    let firstInvalid = null;
+
+    if (parseInt(duration, 10) !== 1) {
+        setError(durationField, "Must be 1 Year because the jurisdiction is International Free Zone Authority and Multi-Year Continuation is ticked.");
+        firstInvalid = durationField;
+    }
+
+    if (start && expiry) {
+        const requiredExpiry = maxExpiryDate(start, 1);
+        if (expiry !== requiredExpiry) {
+            setError(expiryField, `The License Expiry Date must be exactly 1 year after the start date. The allowed date is ${formatDisplayDate(requiredExpiry)}.`);
+            if (!firstInvalid) firstInvalid = expiryField;
+        }
+    }
+
+    if (!firstInvalid) return true;
+
+    document.getElementById(firstInvalid.key).scrollIntoView({ behavior: "smooth", block: "center" });
+    return false;
 }
 
 /* ---------------------------------------------------------------
@@ -348,9 +410,28 @@ function showToast(message, type = "success", duration = 4000, onClose = null) {
 }
 
 /* ---------------------------------------------------------------
+   Multi-Year Continuation visibility
+   Shown only for the IFZA jurisdiction. When hidden, row 2 falls
+   back to three equal columns and the value is reset to false.
+--------------------------------------------------------------- */
+function setContinuationVisible(show) {
+    const grid = document.getElementById("license-fields");
+    const cb   = document.getElementById("multi_year_continuation");
+    const cell = cb.closest(".field-checkbox");
+
+    grid.classList.toggle("no-continuation", !show);
+    cell.classList.toggle("hidden", !show);
+    if (!show) cb.checked = false;   // a hidden box must never affect validation or the payload
+}
+
+const isContinuationJurisdiction = (j) =>
+    String(j || "").trim().toLowerCase() === CONTINUATION_JURISDICTION.toLowerCase();
+
+/* ---------------------------------------------------------------
    Zoho init
 --------------------------------------------------------------- */
 renderForm();
+setContinuationVisible(false);   // hidden until the load function confirms the jurisdiction
 
 // Clear a stale expiry error when Start Date or Duration changes
 ["license_start_date", "license_duration"].forEach(key => {
@@ -375,7 +456,7 @@ const DATA_MAP = {
     tl_license_start_date:        "license_start_date",
     tl_license_expiry_date:       "license_expiry_date",
     tl_my_license_duration:       "license_duration",
-    multi_year_continuation:      "multi_year_continuation",
+    my_continuation:              "multi_year_continuation",
     account_billing_street:       "street_address",
     account_billing_city:         "city",
     account_billing_state:        "state",
@@ -488,7 +569,7 @@ function populateForm(data) {
         const el = document.getElementById(f.key);
         if (f.type === "date") el.value = toInputDate(val);
         else if (f.type === "select") setSelectValue(el, val);
-        else if (f.type === "checkbox") el.checked = Boolean(val);
+        else if (f.type === "checkbox") el.checked = (val === true || String(val).toLowerCase() === "true");
         else el.value = val;
     });
 }
@@ -551,6 +632,11 @@ async function initializeWidget(e) {
             setFieldOptions("license_type", data.license_type_options);
             setFieldOptions("license_activities", data.license_activity_options);
             populateForm(data);
+
+            currentJurisdiction = data.tl_jurisdiction || null;
+
+            // Show Multi-Year Continuation? only for IFZA; hides + resets it otherwise
+            setContinuationVisible(isContinuationJurisdiction(currentJurisdiction));
         } catch (loadErr) {
             console.error("Could not load license data:", loadErr);
             hideLoader();
@@ -574,6 +660,7 @@ async function handleAction(event) {
     event.preventDefault();
 
     if (!validateForm()) return;
+    if (!validateIfzaContinuation()) return;
 
     const submitBtn = event.submitter;
     submitBtn.disabled = true;
@@ -596,7 +683,8 @@ async function handleAction(event) {
                 "license_start_date":      v("license_start_date"),
                 "license_expiry_date":     v("license_expiry_date"),
                 "license_duration":        v("license_duration"),
-                "multi_year_continuation": v("multi_year_continuation")
+                "multi_year_continuation": v("multi_year_continuation"),
+                "my_continuation":         v("multi_year_continuation")
             },
             "address": {
                 "street_address": v("street_address"),

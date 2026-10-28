@@ -235,17 +235,26 @@ select.input:focus {
 #license-fields > .field.col-7 { grid-column: span 7; }
 #license-fields > .field.field-pair { grid-column: span 10; }
 
+/* Continuation hidden: row 2 becomes 8 + 8 + 8 like every other row */
+#license-fields.no-continuation > .field.col-7,
+#license-fields.no-continuation > .field.field-pair { grid-column: span 8; }
+.no-continuation .field-pair { grid-template-columns: minmax(0, 1fr); }
+
 @media (max-width: 720px) {
   #license-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #license-fields > .field,
-  #license-fields > .field.col-7 { grid-column: span 1; }
+  #license-fields > .field.col-7,
+  #license-fields.no-continuation > .field.col-7,
+  #license-fields.no-continuation > .field.field-pair { grid-column: span 1; }
   #license-fields > .field.field-pair { grid-column: 1 / -1; }
 }
 @media (max-width: 520px) {
   #license-fields { grid-template-columns: minmax(0, 1fr); }
   #license-fields > .field,
   #license-fields > .field.col-7,
-  #license-fields > .field.field-pair { grid-column: 1 / -1; }
+  #license-fields > .field.field-pair,
+  #license-fields.no-continuation > .field.col-7,
+  #license-fields.no-continuation > .field.field-pair { grid-column: 1 / -1; }
 }
 
 /* ---------------------------------------------------------------
