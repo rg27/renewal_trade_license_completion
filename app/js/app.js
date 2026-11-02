@@ -299,7 +299,7 @@ function validateForm() {
                 const requiredExpiry = maxExpiryDate(start, years);
                 if (expiry !== requiredExpiry) {
                     message = isIfza
-                        ? `Expiry date must be exactly 1 year after the start date for International Free Zone Authority. The allowed date is ${formatDisplayDate(requiredExpiry)}.`
+                        ? `For IFZA, the expiry date must be exactly one year after the start date (${formatDisplayDate(requiredExpiry)}).`
                         : `Expiry date does not match the ${duration.toLowerCase()} license duration. The allowed date is ${formatDisplayDate(requiredExpiry)}.`;
                 }
             }
@@ -362,7 +362,7 @@ function showToast(message, type = "success", duration = 4000, onClose = null) {
 
     setTimeout(() => {
         toast.style.opacity = "0";
-        toast.style.transform = "translateY(-0.5rem) scale(0.96)";
+        toast.style.transform = "translateY(0.5rem) scale(0.96)";
         toast.style.transition = "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)";
         setTimeout(() => {
             toast.remove();
@@ -636,6 +636,27 @@ async function initializeWidget(e) {
     }
 }
 
+async function finalizeSuccess() {
+    // Keep something visible while Zoho processes the blueprint and the page reloads
+    showLoader("Completing...");
+
+    const reloadPage = () => {
+        if (window.top && window.top !== window) {
+            window.top.location.reload();
+        } else {
+            window.location.reload();
+        }
+    };
+
+    try {
+        await ZOHO.CRM.BLUEPRINT.proceed();
+    } catch (e) {
+        console.error("Blueprint error", e);
+    }
+
+    reloadPage();
+}
+
 /* ---------------------------------------------------------------
    Submit
 --------------------------------------------------------------- */
@@ -687,9 +708,12 @@ async function handleAction(event) {
         hideLoader();
 
         if (response && response.code === "success") {
-            showToast("The renewal trade license details have been successfully updated.", "success", 4000, () => {
-                ZOHO.CRM.UI.Popup.closeReload();
-            });
+            showToast(
+                "The renewal trade license details have been successfully updated.",
+                "success",
+                2000,
+                finalizeSuccess
+            );
         } else {
             throw new Error((response && response.code) || "Operation failed");
         }

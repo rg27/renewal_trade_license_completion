@@ -326,12 +326,18 @@ select.input:focus {
 .checkbox-input:checked + .checkbox-state { color: #047857; }
 .checkbox-input:checked + .checkbox-state::after { content: "Yes"; }
 
+/* Save / Close row: pinned to the bottom of the card while scrolling */
 .btn-row {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: .75rem;
-  padding-top: .875rem;
+  margin-top: auto;
+  padding: .875rem 0 .25rem;
+  background: #fff;
   border-top: 1px solid #edf3f0;
   flex-wrap: wrap;
 }
@@ -365,15 +371,19 @@ select.input:focus {
 
 .btn:disabled { opacity: .6; cursor: not-allowed; transform: none; }
 
+/* Toast: floats at the bottom center, just above the pinned button row */
 #app-toast {
   position: fixed;
-  top: 1.25rem;
-  right: 1.25rem;
+  bottom: 5.5rem;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: max-content;
+  min-width: 19rem;
+  max-width: min(25rem, calc(100% - 2rem));
   z-index: 10000;
   display: flex;
   flex-direction: column;
-  min-width: 19rem;
-  max-width: 25rem;
   padding: 1rem 1.125rem 1rem 1rem;
   border-radius: 0.875rem;
   overflow: hidden;
@@ -400,7 +410,7 @@ select.input:focus {
 }
 
 @keyframes toastSlideIn {
-  from { opacity: 0; transform: translateY(-0.75rem) scale(0.96); }
+  from { opacity: 0; transform: translateY(1rem) scale(0.96); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
