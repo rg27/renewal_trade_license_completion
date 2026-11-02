@@ -6,6 +6,7 @@ const LOAD_FUNCTION   = "renewal_tl_completion_data";                    // retu
 const UPDATE_FUNCTION = "renewal_license_completion_update_trade_license"; // saves the renewal
 
 // Multi-Year Continuation? is only shown for this jurisdiction
+// (and this jurisdiction's expiry date is always validated as 1 year)
 const CONTINUATION_JURISDICTION = "International Free Zone Authority";
 
 let currentRecordId, currentLfId, currentAccountId, triggeredByUser = null;
@@ -285,22 +286,30 @@ function validateForm() {
     const duration   = getValue(fieldByKey("license_duration"));
     const expiryField = fieldByKey("license_expiry_date");
 
+    // True when License Start Date already has an error (required or date window)
+    const startHasError = document.getElementById("license_start_date").classList.contains("input-error");
+
     if (expiry) {   // empty case is already handled by the required check
         const today = toInputDate(new Date());
+        const isIfza = isContinuationJurisdiction(currentJurisdiction);
         let message = null;
 
         if (expiry <= today) {
             message = "Expiry date must be a future date.";
         } else if (start && expiry <= start) {
             message = "Expiry date must be after the start date.";
-        } else if (start && duration) {
-            // Runs whether or not Multi-Year Continuation is ticked
-            const years = parseInt(duration, 10);   // "3 Years" -> 3
+        } else if (!startHasError && start && (isIfza || duration)) {
+            // Mismatch error is skipped while License Start Date has its own error
+            // IFZA: always 1 year, regardless of MY - License Duration
+            // Other jurisdictions: follows MY - License Duration
+            const years = isIfza ? 1 : parseInt(duration, 10);   // "3 Years" -> 3
             if (years) {
-                // The expiry must be exactly start + duration - 1 day
+                // The expiry must be exactly start + years - 1 day
                 const requiredExpiry = maxExpiryDate(start, years);
                 if (expiry !== requiredExpiry) {
-                    message = `Expiry date does not match the ${duration.toLowerCase()} license duration. The allowed date is ${formatDisplayDate(requiredExpiry)}.`;
+                    message = isIfza
+                        ? `Expiry date must be exactly 1 year after the start date for International Free Zone Authority. The allowed date is ${formatDisplayDate(requiredExpiry)}.`
+                        : `Expiry date does not match the ${duration.toLowerCase()} license duration. The allowed date is ${formatDisplayDate(requiredExpiry)}.`;
                 }
             }
         }
@@ -316,41 +325,6 @@ function validateForm() {
         return false;
     }
     return true;
-}
-
-/* IFZA + Multi-Year Continuation ticked:
-   - MY - License Duration must be 1 Year
-   - License Expiry Date must be exactly Start Date + 1 year - 1 day
-   Errors are shown inline only (no toast). */
-function validateIfzaContinuation() {
-    const continuation = getValue(fieldByKey("multi_year_continuation"));
-    if (!continuation || !isContinuationJurisdiction(currentJurisdiction)) return true;
-
-    const durationField = fieldByKey("license_duration");
-    const expiryField   = fieldByKey("license_expiry_date");
-    const duration = getValue(durationField);
-    const start    = getValue(fieldByKey("license_start_date"));
-    const expiry   = getValue(expiryField);
-
-    let firstInvalid = null;
-
-    if (parseInt(duration, 10) !== 1) {
-        setError(durationField, "Must be 1 Year because the jurisdiction is International Free Zone Authority and Multi-Year Continuation is ticked.");
-        firstInvalid = durationField;
-    }
-
-    if (start && expiry) {
-        const requiredExpiry = maxExpiryDate(start, 1);
-        if (expiry !== requiredExpiry) {
-            setError(expiryField, `The License Expiry Date must be exactly 1 year after the start date. The allowed date is ${formatDisplayDate(requiredExpiry)}.`);
-            if (!firstInvalid) firstInvalid = expiryField;
-        }
-    }
-
-    if (!firstInvalid) return true;
-
-    document.getElementById(firstInvalid.key).scrollIntoView({ behavior: "smooth", block: "center" });
-    return false;
 }
 
 /* ---------------------------------------------------------------
@@ -422,6 +396,25 @@ function setContinuationVisible(show) {
     grid.classList.toggle("no-continuation", !show);
     cell.classList.toggle("hidden", !show);
     if (!show) cb.checked = false;   // a hidden box must never affect validation or the payload
+
+    applyContinuationLock();         // keeps the duration lock in sync with the checkbox
+}
+
+/* Multi-Year Continuation ticked:
+   MY - License Duration is forced to "1 Year" and made read-only.
+   Unticked (or hidden): the field is editable again. */
+function applyContinuationLock() {
+    const cb = document.getElementById("multi_year_continuation");
+    const durationEl = document.getElementById("license_duration");
+
+    if (cb.checked) {
+        durationEl.value = "1 Year";
+        durationEl.disabled = true;   // a select has no readOnly, disabled is the equivalent
+        clearError(fieldByKey("license_duration"));
+        clearError(fieldByKey("license_expiry_date"));
+    } else {
+        durationEl.disabled = false;
+    }
 }
 
 const isContinuationJurisdiction = (j) =>
@@ -438,6 +431,10 @@ setContinuationVisible(false);   // hidden until the load function confirms the 
     const evt = key === "license_duration" ? "change" : "input";
     document.getElementById(key).addEventListener(evt, () => clearError(fieldByKey("license_expiry_date")));
 });
+
+// Ticking / unticking Multi-Year Continuation locks / unlocks MY - License Duration
+document.getElementById("multi_year_continuation")
+    .addEventListener("change", applyContinuationLock);
 
 ZOHO.embeddedApp.on("PageLoad", async function (e) {
     await initializeWidget(e);
@@ -635,7 +632,8 @@ async function initializeWidget(e) {
 
             currentJurisdiction = data.tl_jurisdiction || null;
 
-            // Show Multi-Year Continuation? only for IFZA; hides + resets it otherwise
+            // Show Multi-Year Continuation? only for IFZA; hides + resets it otherwise.
+            // Also syncs the duration lock (ticked -> "1 Year" + read-only).
             setContinuationVisible(isContinuationJurisdiction(currentJurisdiction));
         } catch (loadErr) {
             console.error("Could not load license data:", loadErr);
@@ -660,7 +658,6 @@ async function handleAction(event) {
     event.preventDefault();
 
     if (!validateForm()) return;
-    if (!validateIfzaContinuation()) return;
 
     const submitBtn = event.submitter;
     submitBtn.disabled = true;
