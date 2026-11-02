@@ -66,7 +66,7 @@ const LICENSE_FIELDS = [
         label: "Multi-Year Continuation?",
         type: "checkbox",
         required: false,
-        pairWith: "license_duration",   // renders beside this field (75% / 25%)
+        pairWith: "license_duration",
         hint: "Check this box if this license renewal is a continuation of a Multi-Year. This means that this is an internal license renewal with IFZA. If you tick this box you can leave the license duration at 1-year."
     },
     { key: "license_activities",      label: "License Activities",         type: "multiselect", required: true, col: 7, options: LICENSE_ACTIVITIES },
@@ -144,12 +144,11 @@ function renderForm() {
     const adr = document.getElementById("address-fields");
 
     LICENSE_FIELDS.forEach(f => {
-        if (f.pairWith) return;   // rendered next to its partner below
+        if (f.pairWith) return;
 
         const partner = LICENSE_FIELDS.find(p => p.pairWith === f.key);
         if (!partner) { lic.appendChild(renderField(f)); return; }
 
-        // Two fields sharing ONE grid cell: 75% main + 25% partner
         const pair = document.createElement("div");
         pair.className = "field field-pair";
         pair.append(renderField(f), renderField(partner));
@@ -186,8 +185,6 @@ function setupMultiSelect(f) {
 
     btn.addEventListener("click", () => panel.classList.toggle("hidden"));
 
-    // Event delegation: checkboxes are rebuilt when options are filtered,
-    // so listen on the panel instead of on each checkbox
     panel.addEventListener("change", (e) => {
         if (!e.target.classList.contains("ms-check")) return;
         multiSelectState[f.key] = [...panel.querySelectorAll(".ms-check:checked")].map(c => c.value);
@@ -270,7 +267,6 @@ function validateForm() {
         }
     });
 
-    // Issuance Date and Start Date: this month or last month only
     const { min: minAllowed, max: maxAllowed } = allowedMonthWindow();
     ["license_issuance_date", "license_start_date"].forEach(key => {
         const f = fieldByKey(key);
@@ -286,10 +282,9 @@ function validateForm() {
     const duration   = getValue(fieldByKey("license_duration"));
     const expiryField = fieldByKey("license_expiry_date");
 
-    // True when License Start Date already has an error (required or date window)
     const startHasError = document.getElementById("license_start_date").classList.contains("input-error");
 
-    if (expiry) {   // empty case is already handled by the required check
+    if (expiry) {
         const today = toInputDate(new Date());
         const isIfza = isContinuationJurisdiction(currentJurisdiction);
         let message = null;
@@ -299,12 +294,8 @@ function validateForm() {
         } else if (start && expiry <= start) {
             message = "Expiry date must be after the start date.";
         } else if (!startHasError && start && (isIfza || duration)) {
-            // Mismatch error is skipped while License Start Date has its own error
-            // IFZA: always 1 year, regardless of MY - License Duration
-            // Other jurisdictions: follows MY - License Duration
-            const years = isIfza ? 1 : parseInt(duration, 10);   // "3 Years" -> 3
+            const years = isIfza ? 1 : parseInt(duration, 10);
             if (years) {
-                // The expiry must be exactly start + years - 1 day
                 const requiredExpiry = maxExpiryDate(start, years);
                 if (expiry !== requiredExpiry) {
                     message = isIfza
@@ -343,9 +334,6 @@ function hideLoader() {
     o.setAttribute("aria-hidden", "true");
 }
 
-/* ---------------------------------------------------------------
-   Toast Notifications (Top-Right with Top Animated Progress Bar)
---------------------------------------------------------------- */
 function showToast(message, type = "success", duration = 4000, onClose = null) {
     const existing = document.getElementById("app-toast");
     if (existing) existing.remove();
@@ -385,8 +373,6 @@ function showToast(message, type = "success", duration = 4000, onClose = null) {
 
 /* ---------------------------------------------------------------
    Multi-Year Continuation visibility
-   Shown only for the IFZA jurisdiction. When hidden, row 2 falls
-   back to three equal columns and the value is reset to false.
 --------------------------------------------------------------- */
 function setContinuationVisible(show) {
     const grid = document.getElementById("license-fields");
@@ -395,21 +381,18 @@ function setContinuationVisible(show) {
 
     grid.classList.toggle("no-continuation", !show);
     cell.classList.toggle("hidden", !show);
-    if (!show) cb.checked = false;   // a hidden box must never affect validation or the payload
+    if (!show) cb.checked = false;
 
-    applyContinuationLock();         // keeps the duration lock in sync with the checkbox
+    applyContinuationLock();
 }
 
-/* Multi-Year Continuation ticked:
-   MY - License Duration is forced to "1 Year" and made read-only.
-   Unticked (or hidden): the field is editable again. */
 function applyContinuationLock() {
     const cb = document.getElementById("multi_year_continuation");
     const durationEl = document.getElementById("license_duration");
 
     if (cb.checked) {
         durationEl.value = "1 Year";
-        durationEl.disabled = true;   // a select has no readOnly, disabled is the equivalent
+        durationEl.disabled = true;
         clearError(fieldByKey("license_duration"));
         clearError(fieldByKey("license_expiry_date"));
     } else {
@@ -421,18 +404,23 @@ const isContinuationJurisdiction = (j) =>
     String(j || "").trim().toLowerCase() === CONTINUATION_JURISDICTION.toLowerCase();
 
 /* ---------------------------------------------------------------
-   Zoho init
+   Zoho resize and init
 --------------------------------------------------------------- */
-renderForm();
-setContinuationVisible(false);   // hidden until the load function confirms the jurisdiction
+function resizeWidget() {
+    ZOHO.CRM.UI.Resize({
+        height: "760px",
+        width: "980px"
+    });
+}
 
-// Clear a stale expiry error when Start Date or Duration changes
+renderForm();
+setContinuationVisible(false);
+
 ["license_start_date", "license_duration"].forEach(key => {
     const evt = key === "license_duration" ? "change" : "input";
     document.getElementById(key).addEventListener(evt, () => clearError(fieldByKey("license_expiry_date")));
 });
 
-// Ticking / unticking Multi-Year Continuation locks / unlocks MY - License Duration
 document.getElementById("multi_year_continuation")
     .addEventListener("change", applyContinuationLock);
 
@@ -595,7 +583,7 @@ async function initializeWidget(e) {
             greetingEl.classList.add("visible");
         }
 
-        ZOHO.CRM.UI.Resize({ height: "800", width: "960" });
+        resizeWidget();
 
         if (!currentRecordId) {
             hideLoader();
@@ -631,9 +619,6 @@ async function initializeWidget(e) {
             populateForm(data);
 
             currentJurisdiction = data.tl_jurisdiction || null;
-
-            // Show Multi-Year Continuation? only for IFZA; hides + resets it otherwise.
-            // Also syncs the duration lock (ticked -> "1 Year" + read-only).
             setContinuationVisible(isContinuationJurisdiction(currentJurisdiction));
         } catch (loadErr) {
             console.error("Could not load license data:", loadErr);
